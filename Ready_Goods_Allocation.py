@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 
 st.title("🛒 Goods Ready Stock Allocation (with Excel formulas)")
 
@@ -62,6 +63,17 @@ if sales_file and goods_file:
             ws.cell(row=row, column=conant_msoh_col).value = f"=ROUND(({ws.cell(row, conant_soh_col).coordinate}+{ws.cell(row, conant_qty_col).coordinate})/({ws.cell(row, mthly_max_col).coordinate}*0.6), 2)"
             ws.cell(row=row, column=ocean_msoh_col).value = f"=ROUND(({ws.cell(row, ocean_soh_col).coordinate}+{ws.cell(row, ocean_qty_col).coordinate})/({ws.cell(row, mthly_max_col).coordinate}*0.4), 2)"
 
+            # Highlight "Ready to Ship" column
+            if ready_to_ship_col:
+                ws.cell(row=row, column=ready_to_ship_col).fill = yellow_fill
+                
+        # Group and hide specified columns
+        columns_to_hide = [(10, 27), (31, 36), (44, 60), (63, 64)]  # (J to AA), (AE to AJ), (AR to BH), (BK to BL)
+        for col_start, col_end in columns_to_hide:
+            ws.column_dimensions[ws.cell(row=1, column=col_start).column_letter].hidden = True
+            for col in range(col_start, col_end + 1):
+                ws.column_dimensions[ws.cell(row=1, column=col).column_letter].hidden = True        
+                
         # Save final output
         final_output = BytesIO()
         wb.save(final_output)
