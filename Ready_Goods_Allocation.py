@@ -58,6 +58,10 @@ if sales_file and goods_file:
         ocean_qty_col = headers.index("ocean qty") + 1
         ocean_msoh_col = headers.index("ocean msoh") + 1
 
+        # Find "Ready to Ship" column and apply yellow highlight
+        ready_to_ship_col = headers.index("ready to ship") + 1 if "ready to ship" in headers else None
+        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+        
         for row in range(2, row_count + 1):
             # Excel formula using RC
             ws.cell(row=row, column=conant_msoh_col).value = f"=ROUND(({ws.cell(row, conant_soh_col).coordinate}+{ws.cell(row, conant_qty_col).coordinate})/({ws.cell(row, mthly_max_col).coordinate}*0.6), 2)"
