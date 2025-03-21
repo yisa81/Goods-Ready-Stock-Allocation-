@@ -1,47 +1,56 @@
-
-from fastapi import FastAPI, UploadFile, File
+import streamlit as st
 import pandas as pd
 from io import BytesIO
-from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+st.title("🛒 Goods Ready Stock Allocation")
 
-# Allow frontend requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Upload Sales Report and Ready Goods files
+sales_file = st.file_uploader("Upload Sales Report (.xlsx)", type="xlsx")
+goods_file = st.file_uploader("Upload Ready Goods (.xlsx)", type="xlsx")
 
-@app.post("/upload")
-async def upload_files(sales_report: UploadFile = File(...), ready_goods: UploadFile = File(...)):
-    # Read sales report
-    sales_df = pd.read_excel(BytesIO(await sales_report.read()))
-    ready_goods_df = pd.read_excel(BytesIO(await ready_goods.read()))
-    
-    # Ensure SKU column names match
-    sales_df.rename(columns=lambda x: x.strip().lower(), inplace=True)
-    ready_goods_df.rename(columns=lambda x: x.strip().lower(), inplace=True)
-Store, Store, Store, Store, Store, Store, Store, Store, Store, Store, Store, Store, Store, Store, me, Store
+if sales_file and goods_file:
+    try:
+        sales_df = pd.read_excel(sales_file, engine="openpyxl")
+        goods_df = pd.read_excel(goods_file, engine="openpyxl")
 
-Hi All Please see today's CSV attached. If you have any ques    
-    # Select required columns from sales report
-    selected_columns = [
-        'sku', 'life cycle', 'b - last 3 mths avg', 'avg pc/store (3mths)', 'count',
-        'conant soh', 'ocean soh', 'status', 'mthly max avg sales (a,b & c)'
-    ]
-    sales_df = sales_df[selected_columns]
-    
-    # Merge based on SKU
-    merged_df = ready_goods_df.merge(sales_df, on='sku', how='left')
-    
-    # Add new columns
-    merged_df['conant qty'] = 0
-    merged_df['ocean qty'] = 0
-    merged_df['conant msoh'] = (merged_df['conant soh'] + merged_df['conant qty']) / (merged_df['mthly max avg sales (a,b & c)'] * 0.6)
-    merged_df['ocean msoh'] = (merged_df['ocean soh'] + merged_df['ocean qty']) / (merged_df['mthly max avg sales (a,b & c)'] * 0.4)
-    
-    # Convert to JSON for frontend
-    return merged_df.to_json(orient='records')
+        # Clean headers
+        sales_df.columns = sales_df.columns.str.strip().str.lower()
+        goods_df.columns = goods_df.columns.str.strip().str.lower()
+
+        # Merge files
+        merged = goods_df.merge(sales_df, on="sku", how="left")
+
+        # Add 100% Conant Msoh
+        if 'conant soh' in merged.columns and 'mthly max avg sales (a,b & c)' in merged.columns:
+            merged['100% conant msoh'] = (merged['conant soh'] / merged['mthly max avg sales (a,b & c)']).round(2)
+        else:
+            merged['100% conant msoh'] = None
+
+        # Add calculation columns
+        merged['conant qty'] = 0
+        merged['ocean qty'] = 0
+        merged['conant msoh'] = (
+            (merged['conant soh'] + merged['conant qty']) /
+            (merged['mthly max avg sales (a,b & c)'] * 0.6)
+        ).round(2)
+        merged['ocean msoh'] = (
+            (merged['ocean soh'] + merged['ocean qty']) /
+            (merged['mthly max avg sales (a,b & c)'] * 0.4)
+        ).round(2)
+
+        # Show result
+        st.success("Merge complete. Preview below:")
+        st.dataframe(merged)
+
+        # Download as Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            merged.to_excel(writer, index=False)
+        st.download_button(
+            label="📥 Download Merged Excel",
+            data=output.getvalue(),
+            file_name="Merged_Goods_Allocation.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        st.error(f"Error: {e}")
