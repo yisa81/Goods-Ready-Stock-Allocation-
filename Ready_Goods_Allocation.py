@@ -1,56 +1,80 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+from openpyxl import load_workbook
 
-st.title("🛒 Goods Ready Stock Allocation")
+st.title("🛒 Goods Ready Stock Allocation (with Excel formulas)")
 
-# Upload Sales Report and Ready Goods files
+# Upload files
 sales_file = st.file_uploader("Upload Sales Report (.xlsx)", type="xlsx")
 goods_file = st.file_uploader("Upload Ready Goods (.xlsx)", type="xlsx")
 
 if sales_file and goods_file:
     try:
+        # Read into DataFrames
         sales_df = pd.read_excel(sales_file, engine="openpyxl")
         goods_df = pd.read_excel(goods_file, engine="openpyxl")
 
-        # Clean headers
+        # Normalize headers
         sales_df.columns = sales_df.columns.str.strip().str.lower()
         goods_df.columns = goods_df.columns.str.strip().str.lower()
 
-        # Merge files
-        merged = goods_df.merge(sales_df, on="sku", how="left")
+        # Merge on SKU
+        merged_df = goods_df.merge(sales_df, on='sku', how='left')
 
-        # Add 100% Conant Msoh
-        if 'conant soh' in merged.columns and 'mthly max avg sales (a,b & c)' in merged.columns:
-            merged['100% conant msoh'] = (merged['conant soh'] / merged['mthly max avg sales (a,b & c)']).round(2)
+        # Add static column
+        if 'conant soh' in merged_df.columns and 'mthly max avg sales (a,b & c)' in merged_df.columns:
+            merged_df['100% conant msoh'] = (merged_df['conant soh'] / merged_df['mthly max avg sales (a,b & c)']).round(2)
         else:
-            merged['100% conant msoh'] = None
+            merged_df['100% conant msoh'] = None
 
-        # Add calculation columns
-        merged['conant qty'] = 0
-        merged['ocean qty'] = 0
-        merged['conant msoh'] = (
-            (merged['conant soh'] + merged['conant qty']) /
-            (merged['mthly max avg sales (a,b & c)'] * 0.6)
-        ).round(2)
-        merged['ocean msoh'] = (
-            (merged['ocean soh'] + merged['ocean qty']) /
-            (merged['mthly max avg sales (a,b & c)'] * 0.4)
-        ).round(2)
+        # Add blank input columns
+        merged_df['conant qty'] = 0
+        merged_df['ocean qty'] = 0
+        merged_df['conant msoh'] = ""  # Will add formula later
+        merged_df['ocean msoh'] = ""
 
-        # Show result
-        st.success("Merge complete. Preview below:")
-        st.dataframe(merged)
-
-        # Download as Excel
+        # Save to temporary Excel (without formulas)
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            merged.to_excel(writer, index=False)
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            merged_df.to_excel(writer, index=False, sheet_name="Data")
+
+        # Re-open and inject formulas
+        output.seek(0)
+        wb = load_workbook(output)
+        ws = wb["Data"]
+
+        headers = list(merged_df.columns)
+        row_count = ws.max_row
+
+        # Get column indexes (1-based)
+        conant_soh_col = headers.index("conant soh") + 1
+        conant_qty_col = headers.index("conant qty") + 1
+        mthly_max_col = headers.index("mthly max avg sales (a,b & c)") + 1
+        conant_msoh_col = headers.index("conant msoh") + 1
+
+        ocean_soh_col = headers.index("ocean soh") + 1
+        ocean_qty_col = headers.index("ocean qty") + 1
+        ocean_msoh_col = headers.index("ocean msoh") + 1
+
+        for row in range(2, row_count + 1):
+            # Excel formula using RC
+            ws.cell(row=row, column=conant_msoh_col).value = f"=ROUND(({ws.cell(row, conant_soh_col).coordinate}+{ws.cell(row, conant_qty_col).coordinate})/({ws.cell(row, mthly_max_col).coordinate}*0.6), 2)"
+            ws.cell(row=row, column=ocean_msoh_col).value = f"=ROUND(({ws.cell(row, ocean_soh_col).coordinate}+{ws.cell(row, ocean_qty_col).coordinate})/({ws.cell(row, mthly_max_col).coordinate}*0.4), 2)"
+
+        # Save final output
+        final_output = BytesIO()
+        wb.save(final_output)
+        final_output.seek(0)
+
+        st.success("✅ File processed successfully!")
         st.download_button(
-            label="📥 Download Merged Excel",
-            data=output.getvalue(),
-            file_name="Merged_Goods_Allocation.xlsx",
+            label="📥 Download Final Excel with Formulas",
+            data=final_output,
+            file_name="Merged_Goods_Allocation_with_Formulas.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Something went wrong: {e}")
+
